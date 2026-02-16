@@ -163,53 +163,23 @@ function LabeledInput({
 }) {
   return (
     <label style={{ display: "grid", gap: 6 }}>
-      <div
-        style={{
-          fontSize: 13,
-          fontWeight: 900,
-          color: "#1a0044",
-          letterSpacing: 0.2,
-        }}
-      >
-        {label}
-      </div>
-
+      <div style={{ fontSize: 13, fontWeight: 900, color: "#1a0044" }}>{label}</div>
       <input
         type={type}
         placeholder={placeholder}
         style={{
           width: "100%",
-          padding: "14px 14px",
-          borderRadius: 14,
-
-          /* KEY FIXES */
-          backgroundColor: "#FFFFFF",
-          color: "#111827",              // strong readable text
-          border: "1.5px solid #D1D5DB", // clearer border
+          padding: "12px 12px",
+          borderRadius: 12,
+          border: "1px solid rgba(20,20,40,0.12)",
           outline: "none",
-
-          fontSize: 16,
-          fontWeight: 500,
-
-          transition: "all 0.15s ease",
-
-          boxShadow: "0 1px 2px rgba(0,0,0,0.04)",
-        }}
-
-        onFocus={(e) => {
-          e.currentTarget.style.border = "1.5px solid #3B1D86";
-          e.currentTarget.style.boxShadow = "0 0 0 3px rgba(59,29,134,0.15)";
-        }}
-
-        onBlur={(e) => {
-          e.currentTarget.style.border = "1.5px solid #D1D5DB";
-          e.currentTarget.style.boxShadow = "0 1px 2px rgba(0,0,0,0.04)";
+          fontSize: 15,
+          background: "white",
         }}
       />
     </label>
   );
 }
-
 
 /* -------------------- Styles -------------------- */
 
