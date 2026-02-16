@@ -4,10 +4,8 @@ import Link from "next/link";
 
 export default function Home() {
   return (
-    <div style={{ minHeight: "100vh", background: "#F5F6FB" }}>
-      <Header />
-
-      <main style={{ maxWidth: 1100, margin: "0 auto", padding: "44px 20px 28px" }}>
+    <main style={{ minHeight: "100vh", background: "#F5F6FB" }}>
+      <div style={{ maxWidth: 1100, margin: "0 auto", padding: "44px 20px 28px" }}>
         <section style={heroCard}>
           <div>
             <div style={badge}>Your mental wellness companion</div>
@@ -19,8 +17,8 @@ export default function Home() {
             </h1>
 
             <p style={subhead}>
-              Solace helps you reflect, track your mood, and build healthier routines with gentle guidance
-              and privacy-first design.
+              Solace helps you reflect, track your mood, and build healthier routines with gentle
+              guidance and privacy-first design.
             </p>
 
             <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginTop: 18 }}>
@@ -54,10 +52,17 @@ export default function Home() {
         </section>
 
         <section style={{ marginTop: 24, textAlign: "center" }}>
-          <div style={{ color: "#4F4F63", fontSize: 16 }}>
-            Ready to continue?
-          </div>
-          <div style={{ display: "flex", justifyContent: "center", gap: 12, marginTop: 12, flexWrap: "wrap" }}>
+          <div style={{ color: "#4F4F63", fontSize: 16 }}>Ready to continue?</div>
+
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "center",
+              gap: 12,
+              marginTop: 12,
+              flexWrap: "wrap",
+            }}
+          >
             <Link href="/login" style={{ textDecoration: "none" }}>
               <PrimaryButton label="Login" />
             </Link>
@@ -65,71 +70,9 @@ export default function Home() {
               <SecondaryButton label="Sign up" />
             </Link>
           </div>
-          </section>
-      </main>
-
-      <Footer />
-    </div>
-  );
-}
-
-/* -------------------- Header / Footer -------------------- */
-
-function Header() {
-  return (
-    <header style={topBar}>
-      <div style={topBarInner}>
-        <Link href="/" style={{ display: "flex", alignItems: "center", gap: 10, textDecoration: "none" }}>
-          <Image src="/solace-logo.png" alt="Solace" width={72} height={72} />
-          <div style={{ color: "white", fontWeight: 800, fontSize: 22, letterSpacing: 0.2 }}>Solace</div>
-        </Link>
-
-        <nav style={{ display: "flex", gap: 14, alignItems: "center" }}>
-          <NavLink href="/tryout" label="Try Out" />
-          <NavLink href="/about" label="About" />
-          <NavLink href="/signup" label="Sign Up" />
-          <NavLink href="/login" label="Login" primary />
-        </nav>
+        </section>
       </div>
-    </header>
-  );
-}
-
-function Footer() {
-  return (
-    <footer style={footerWrap}>
-      <div style={footerInner}>
-        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-          <Image src="/solace-logo.png" alt="Solace" width={34} height={34} />
-          <div style={{ color: "white", fontWeight: 800 }}>Solace</div>
-        </div>
-
-        <div style={{ color: "rgba(255,255,255,0.8)", fontSize: 13 }}>
-          © {new Date().getFullYear()} Solace. All rights reserved.
-        </div>
-      </div>
-    </footer>
-  );
-}
-
-function NavLink({ href, label, primary }: { href: string; label: string; primary?: boolean }) {
-  return (
-    <Link
-      href={href}
-      style={{
-        textDecoration: "none",
-        padding: "10px 14px",
-        borderRadius: 999,
-        fontSize: 14,
-        fontWeight: 700,
-        background: primary ? "white" : "rgba(255,255,255,0.12)",
-        color: primary ? "#1a0044" : "white",
-        border: primary ? "1px solid rgba(255,255,255,0.6)" : "1px solid rgba(255,255,255,0.18)",
-        transition: "transform 120ms ease, background 120ms ease",
-      }}
-    >
-      {label}
-    </Link>
+    </main>
   );
 }
 
@@ -193,25 +136,7 @@ function MiniStat({ title, desc }: { title: string; desc: string }) {
   );
 }
 
-
 /* -------------------- Styles -------------------- */
-
-const topBar: React.CSSProperties = {
-  background: "linear-gradient(180deg, #2a005c 0%, #1a0044 100%)",
-  padding: "20px 22px",
-  borderBottomLeftRadius: 26,
-  borderBottomRightRadius: 26,
-  boxShadow: "0 18px 40px rgba(26,0,68,0.22)",
-};
-
-const topBarInner: React.CSSProperties = {
-  maxWidth: 1100,
-  margin: "0 auto",
-  display: "flex",
-  alignItems: "center",
-  justifyContent: "space-between",
-  gap: 14,
-};
 
 const heroCard: React.CSSProperties = {
   background: "white",
@@ -263,22 +188,4 @@ const imageShell: React.CSSProperties = {
   padding: 14,
   background: "linear-gradient(180deg, rgba(42,0,92,0.08) 0%, rgba(26,0,68,0.04) 100%)",
   border: "1px solid rgba(42,0,92,0.10)",
-};
-
-const footerWrap: React.CSSProperties = {
-  marginTop: 30,
-  background: "linear-gradient(180deg, #2a005c 0%, #1a0044 100%)",
-  padding: "18px 18px",
-  borderTopLeftRadius: 26,
-  borderTopRightRadius: 26,
-};
-
-const footerInner: React.CSSProperties = {
-  maxWidth: 1100,
-  margin: "0 auto",
-  display: "flex",
-  justifyContent: "space-between",
-  alignItems: "center",
-  gap: 14,
-  flexWrap: "wrap",
 };
