@@ -10,7 +10,7 @@ function detectEmotion(text: string): "anxious" | "sad" | "pessimistic" | "neutr
   return "neutral";
 }
 
-async function bbPost(path: string, body: any) {
+async function bbPost(path: string, body: any, API_KEY: string) {
     const res = await fetch(`${BASE_URL}${path}`, {
       method: "POST",
       headers: {
@@ -36,7 +36,7 @@ async function bbPost(path: string, body: any) {
  */
 let assistantIdCache: string | null = null;
 
-async function getOrCreateAssistant(): Promise<string> {
+async function getOrCreateAssistant(API_KEY: string): Promise<string> {
   if (assistantIdCache) return assistantIdCache;
 
   const systemPrompt =
@@ -49,15 +49,15 @@ async function getOrCreateAssistant(): Promise<string> {
   const assistant = await bbPost("/assistants", {
     name: "Solace",
     system_prompt: systemPrompt,
-  });
+  }, API_KEY);
 
   assistantIdCache = assistant.assistant_id || assistant.id;
   if (!assistantIdCache) throw new Error("Could not read assistant_id from Backboard response.");
   return assistantIdCache;
 }
 
-async function createThread(assistantId: string): Promise<string> {
-  const thread = await bbPost("/threads", { assistant_id: assistantId });
+async function createThread(assistantId: string, API_KEY: string): Promise<string> {
+  const thread = await bbPost("/threads", { assistant_id: assistantId }, API_KEY);
   const threadId = thread.thread_id || thread.id;
   if (!threadId) throw new Error("Could not read thread_id from Backboard response.");
   return threadId;
@@ -77,8 +77,8 @@ export async function POST(req: Request) {
 
     const emotion = detectEmotion(text);
 
-    const assistantId = await getOrCreateAssistant();
-    const useThreadId = threadId || (await createThread(assistantId));
+    const assistantId = await getOrCreateAssistant(API_KEY);
+    const useThreadId = threadId || (await createThread(assistantId, API_KEY));
 
     const resp = await bbPost("/messages", {
       thread_id: useThreadId,
@@ -87,7 +87,7 @@ export async function POST(req: Request) {
       model_name: "gpt-4o-mini",
       stream: false,
       memory: "Auto",
-    });
+    }, API_KEY);
 
     const reply =
       resp?.content ||
