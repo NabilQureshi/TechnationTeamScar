@@ -1,11 +1,6 @@
 export const runtime = "nodejs";
 
 const BASE_URL = process.env.BACKBOARD_BASE_URL || "https://app.backboard.io/api";
-const API_KEY = process.env.BACKBOARD_API_KEY;
-
-if (!API_KEY) {
-  throw new Error("Missing BACKBOARD_API_KEY in .env.local");
-}
 
 function detectEmotion(text: string): "anxious" | "sad" | "pessimistic" | "neutral" {
   const t = text.toLowerCase();
@@ -70,6 +65,12 @@ async function createThread(assistantId: string): Promise<string> {
 
 export async function POST(req: Request) {
   try {
+    const API_KEY = process.env.BACKBOARD_API_KEY;
+
+    if (!API_KEY) {
+      throw new Error("Missing BACKBOARD_API_KEY in .env.local");
+    }
+
     const { message, threadId } = await req.json();
     const text = String(message ?? "").trim();
     if (!text) return Response.json({ error: "Empty message" }, { status: 400 });
