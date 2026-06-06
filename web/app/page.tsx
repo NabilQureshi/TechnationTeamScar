@@ -59,7 +59,7 @@ export default function Home() {
           </div>
           <div style={{ display: "flex", justifyContent: "center", gap: 12, marginTop: 12, flexWrap: "wrap" }}>
             <Link href="/login" style={{ textDecoration: "none" }}>
-              <PrimaryButton label="Login" />
+              <PrimaryButton label="Log in" />
             </Link>
             <Link href="/signup" style={{ textDecoration: "none" }}>
               <SecondaryButton label="Sign up" />

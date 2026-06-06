@@ -12,7 +12,7 @@ export default function LoginPage() {
           {/* Left: small marketing card */}
           <section style={sideCard}>
             <div style={badge}>Welcome back</div>
-            <h1 style={title}>Log in to Solace</h1>
+            <h1 style={title}>Sign up to Solace</h1>
             <p style={desc}>
               Continue your reflections, routines, and progress — privately and securely.
             </p>
