@@ -50,19 +50,44 @@ export default function Home() {
     setInput('');
     setIsLoading(true);
 
+    const previousMessages = messages.slice(-10).map(msg => ({
+      role: msg.role,
+      content: msg.content
+    }));
+
     // Simulate AI response (replace with actual API call)
-    setTimeout(() => {
-      const assistantMessage: Message = {
+    try {
+    const response = await fetch('/api/chat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+
+      body: JSON.stringify({ 
+        message: userMessage.content,
+        history: previousMessages  // ← Add this
+      }),
+    });
+    
+    const data = await response.json();
+    
+    const assistantMessage: Message = {
+      id: (Date.now() + 1).toString(),
+      role: 'assistant',
+      content: data.reply,
+    };
+    setMessages((prev) => [...prev, assistantMessage]);
+    } catch (error) {
+      console.error('Chat error:', error);
+      const errorMessage: Message = {
         id: (Date.now() + 1).toString(),
         role: 'assistant',
-        content: getAIResponse(userMessage.content),
+        content: 'Sorry, I had trouble responding. Please try again.',
       };
-      setMessages((prev) => [...prev, assistantMessage]);
+      setMessages((prev) => [...prev, errorMessage]);
+    } finally {
       setIsLoading(false);
-    }, 800);
+    }
   };
-
-  // Simple response generator (replace with your AI API)
+  
   const getAIResponse = (userInput: string): string => {
     const lowerInput = userInput.toLowerCase();
     if (lowerInput.includes('sad') || lowerInput.includes('down')) {

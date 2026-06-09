@@ -1,7 +1,5 @@
 export const runtime = "nodejs";
 
-const BASE_URL = process.env.BACKBOARD_BASE_URL || "https://app.backboard.io/api";
-
 function detectEmotion(text: string): "anxious" | "sad" | "pessimistic" | "neutral" {
   const t = text.toLowerCase();
   if (/(anxious|panic|worried|overthink|stress|stressed|nervous)/.test(t)) return "anxious";
@@ -10,93 +8,70 @@ function detectEmotion(text: string): "anxious" | "sad" | "pessimistic" | "neutr
   return "neutral";
 }
 
-async function bbPost(path: string, body: any, API_KEY: string) {
-    const res = await fetch(`${BASE_URL}${path}`, {
-      method: "POST",
-      headers: {
-        "Authorization": `Bearer ${API_KEY}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(body),
-    });
-  
-    if (!res.ok) {
-      const text = await res.text();
-      throw new Error(`HTTP ${res.status}: ${text}`);
-    }
-  
-    return res.json();
-  }
-  
-
-/**
- * Hackathon shortcut:
- * - Create ONE assistant and cache its id in memory.
- * - In production: store assistant/thread ids in DB (Firebase).
- */
-let assistantIdCache: string | null = null;
-
-async function getOrCreateAssistant(API_KEY: string): Promise<string> {
-  if (assistantIdCache) return assistantIdCache;
-
-  const systemPrompt =
-    "You are Solace, a supportive wellbeing companion (not a clinician). " +
-    "Be calm, friendly, and practical. Ask 1–2 short questions. Offer small actionable steps. " +
-    "If user is in immediate danger, encourage contacting local emergency services or a trusted person.";
-
-  // NOTE: If this endpoint 404s, Backboard may use a different REST path.
-  // The flow (assistant -> thread -> message) is correct; adjust paths to match your Backboard docs.
-  const assistant = await bbPost("/assistants", {
-    name: "Solace",
-    system_prompt: systemPrompt,
-  }, API_KEY);
-
-  assistantIdCache = assistant.assistant_id || assistant.id;
-  if (!assistantIdCache) throw new Error("Could not read assistant_id from Backboard response.");
-  return assistantIdCache;
-}
-
-async function createThread(assistantId: string, API_KEY: string): Promise<string> {
-  const thread = await bbPost("/threads", { assistant_id: assistantId }, API_KEY);
-  const threadId = thread.thread_id || thread.id;
-  if (!threadId) throw new Error("Could not read thread_id from Backboard response.");
-  return threadId;
-}
-
 export async function POST(req: Request) {
   try {
-    const API_KEY = process.env.BACKBOARD_API_KEY;
-
+    const API_KEY = process.env.GEMINI_API_KEY;
     if (!API_KEY) {
-      throw new Error("Missing BACKBOARD_API_KEY in .env.local");
+      throw new Error("Missing GEMINI_API_KEY in .env.local");
     }
 
-    const { message, threadId } = await req.json();
+    const { message, history = [] } = await req.json();
     const text = String(message ?? "").trim();
     if (!text) return Response.json({ error: "Empty message" }, { status: 400 });
 
     const emotion = detectEmotion(text);
 
-    const assistantId = await getOrCreateAssistant(API_KEY);
-    const useThreadId = threadId || (await createThread(assistantId, API_KEY));
+    // Convert your message history to Gemini's format
+    const contents = [];
 
-    const resp = await bbPost("/messages", {
-      thread_id: useThreadId,
-      content: text,
-      llm_provider: "openai",
-      model_name: "gpt-4o-mini",
-      stream: false,
-      memory: "Auto",
-    }, API_KEY);
+    // Add conversation history (excluding the system prompt)
+    for (const msg of history.slice(-10)) {
+      contents.push({
+        role: msg.role === 'assistant' ? 'model' : 'user',
+        parts: [{ text: msg.content }]
+      });
+    }
 
-    const reply =
-      resp?.content ||
-      resp?.message?.content ||
-      resp?.output_text ||
-      "No reply returned.";
+    // Add the current user message
+    contents.push({
+      role: 'user',
+      parts: [{ text: text }]
+    });
 
-    return Response.json({ reply, emotion, threadId: useThreadId });
+    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${API_KEY}`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        contents: contents,
+        generationConfig: {
+          temperature: 0.7,
+          maxOutputTokens: 500,
+          topP: 0.95,
+        },
+        system_instruction: {
+          parts: [{ 
+            text: 'You are Solace, a warm, supportive mental wellness companion. Be gentle, empathetic, and helpful. Never give medical advice, but offer emotional support and practical coping strategies. Keep responses concise and warm, about a paragraph long at most.' 
+          }]
+        }
+      }),
+    });
+
+    const data = await response.json();
+
+    // Check for errors
+    if (!response.ok) {
+      console.error('Gemini API error:', data);
+      throw new Error(data.error?.message || 'API request failed');
+    }
+
+    // Extract the reply from Gemini's response
+    const reply = data.candidates[0]?.content?.parts[0]?.text || "I'm here for you. Could you tell me more about how you're feeling?";
+
+    return Response.json({ reply, emotion });
   } catch (e: any) {
+    console.error('Chat error:', e);
     return Response.json({ error: e?.message ?? "Unknown error" }, { status: 500 });
   }
 }
