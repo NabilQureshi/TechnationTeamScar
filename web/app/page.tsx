@@ -1,6 +1,8 @@
 // web/app/page.tsx
 import Image from "next/image";
 import Link from "next/link";
+import UserDisplay from '@/components/UserDisplay';
+import SignOutButton from '@/components/SignOutButton';
 
 export default function Home() {
   return (
@@ -22,6 +24,7 @@ export default function Home() {
               Solace helps you reflect, track your mood, and build healthier routines with gentle guidance
               and privacy-first design.
             </p>
+            <UserDisplay />
 
             <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginTop: 18 }}>
               <Link href="/tryout" style={{ textDecoration: "none" }}>
@@ -64,6 +67,7 @@ export default function Home() {
             <Link href="/signup" style={{ textDecoration: "none" }}>
               <SecondaryButton label="Sign up" />
             </Link>
+            <SignOutButton />
           </div>
           </section>
       </main>

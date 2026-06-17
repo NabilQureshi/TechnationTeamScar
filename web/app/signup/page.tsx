@@ -32,7 +32,7 @@ export default function LoginPage() {
           {/* Right: login form */}
           <section style={formCard}>
             <h2 style={formTitle}>Login</h2>
-            <p style={formSub}>Use your email and password. Firebase Auth hookup next.</p>
+            <p style={formSub}>Use your email and password. Supabase Auth hookup next.</p>
 
             <form style={{ display: "grid", gap: 12, marginTop: 14 }}>
               <LabeledInput label="Email" placeholder="you@example.com" />
