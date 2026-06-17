@@ -4,12 +4,12 @@ import { useEffect, useState } from 'react';
 import { createClient } from '@/supabase/client';
 
 export default function UserDisplay() {
-  const [email, setEmail] = useState('');
+  const [email, setEmail] = useState<string | null>(null);
   const supabase = createClient();
 
   useEffect(() => {
     supabase.auth.getUser().then(({ data }) => {
-      if (data.user) setEmail(data.user.email);
+      if (data.user) setEmail(data.user.email ?? null);
     });
   }, []);
 
