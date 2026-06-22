@@ -3,6 +3,7 @@
 import { useState, useRef, useEffect } from 'react';
 import Image from "next/image";
 import Link from "next/link";
+import { createClient } from '@/supabase/client';
 
 type Message = {
   id: string;
@@ -10,110 +11,46 @@ type Message = {
   content: string;
 };
 
-export default function Home() {
-  const [activeTab, setActiveTab] = useState<'chat' | 'calendar'>('chat');
-  const [messages, setMessages] = useState<Message[]>([
-    {
-      id: '1',
-      role: 'assistant',
-      content: "Hi there. I'm Solace. How are you feeling today?",
-    },
-  ]);
-  const [input, setInput] = useState('');
-  const [isLoading, setIsLoading] = useState(false);
-  const messagesEndRef = useRef<HTMLDivElement>(null);
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
+// Create a separate Calendar component with its own state
+function CalendarView() {
+  const [selectedDate, setSelectedDate] = useState<number | null>(null);
+  const [currentMonth, setCurrentMonth] = useState(new Date());
 
-  // Auto-scroll to bottom of messages
-  useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages]);
-
-  // Auto-resize textarea
-  useEffect(() => {
-    if (textareaRef.current) {
-      textareaRef.current.style.height = 'auto';
-      textareaRef.current.style.height = `${Math.min(textareaRef.current.scrollHeight, 150)}px`;
-    }
-  }, [input]);
-
-  const handleSendMessage = async () => {
-    if (!input.trim() || isLoading) return;
-
-    const userMessage: Message = {
-      id: Date.now().toString(),
-      role: 'user',
-      content: input.trim(),
-    };
-
-    setMessages((prev) => [...prev, userMessage]);
-    setInput('');
-    setIsLoading(true);
-
-    const previousMessages = messages.slice(-10).map(msg => ({
-      role: msg.role,
-      content: msg.content
-    }));
-
-    // Simulate AI response (replace with actual API call)
-    try {
-    const response = await fetch('/api/chat', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-
-      body: JSON.stringify({ 
-        message: userMessage.content,
-        history: previousMessages  // ← Add this
-      }),
-    });
-    
-    const data = await response.json();
-    
-    const assistantMessage: Message = {
-      id: (Date.now() + 1).toString(),
-      role: 'assistant',
-      content: data.reply,
-    };
-    setMessages((prev) => [...prev, assistantMessage]);
-    } catch (error) {
-      console.error('Chat error:', error);
-      const errorMessage: Message = {
-        id: (Date.now() + 1).toString(),
-        role: 'assistant',
-        content: 'Sorry, I had trouble responding. Please try again.',
-      };
-      setMessages((prev) => [...prev, errorMessage]);
-    } finally {
-      setIsLoading(false);
-    }
+  // Get days in month
+  const getDaysInMonth = (date: Date) => {
+    const year = date.getFullYear();
+    const month = date.getMonth();
+    const firstDay = new Date(year, month, 1).getDay();
+    const daysInMonth = new Date(year, month + 1, 0).getDate();
+    return { firstDay, daysInMonth };
   };
+
+  const { firstDay, daysInMonth } = getDaysInMonth(currentMonth);
   
-  const getAIResponse = (userInput: string): string => {
-    const lowerInput = userInput.toLowerCase();
-    if (lowerInput.includes('sad') || lowerInput.includes('down')) {
-      return "I hear that you're feeling down. That's completely okay. Remember that feelings come and go like clouds in the sky. Would you like to try a quick breathing exercise together?";
-    }
-    if (lowerInput.includes('anxious') || lowerInput.includes('stressed')) {
-      return "Anxiety can feel overwhelming. Let's ground ourselves for a moment. Can you name three things you can see around you right now?";
-    }
-    if (lowerInput.includes('happy') || lowerInput.includes('good')) {
-      return "I'm glad to hear you're feeling good! What's one small thing that contributed to that today?";
-    }
-    if (lowerInput.includes('thank')) {
-      return "You're very welcome. Remember, I'm always here when you need someone to talk to.";
-    }
-    return "Thank you for sharing that with me. Could you tell me a bit more about how that makes you feel?";
+  // Create array of days with proper spacing
+  const days = [];
+  const totalSlots = Math.ceil((firstDay + daysInMonth) / 7) * 7;
+  
+  for (let i = 0; i < totalSlots; i++) {
+    const dayNumber = i - firstDay + 1;
+    days.push(dayNumber > 0 && dayNumber <= daysInMonth ? dayNumber : null);
+  }
+
+  const changeMonth = (delta: number) => {
+    const newDate = new Date(currentMonth);
+    newDate.setMonth(newDate.getMonth() + delta);
+    setCurrentMonth(newDate);
+    setSelectedDate(null); // Reset selection when changing months
   };
 
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault();
-      handleSendMessage();
-    }
+  const isToday = (day: number) => {
+    const today = new Date();
+    return currentMonth.getMonth() === today.getMonth() &&
+           currentMonth.getFullYear() === today.getFullYear() &&
+           day === today.getDate();
   };
 
-  // Calendar view component
-  const CalendarView = () => (
+  return (
     <div style={{ flex: 1, overflowY: 'auto', padding: '20px 24px' }}>
       <div style={{ marginBottom: 24 }}>
         <h2 style={{ fontSize: 24, fontWeight: 800, color: '#1a0044', margin: 0 }}>
@@ -126,11 +63,21 @@ export default function Home() {
 
       {/* Month header */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
-        <button style={calendarNavButton}>←</button>
+        <button 
+          onClick={() => changeMonth(-1)}
+          style={calendarNavButton}
+        >
+          ←
+        </button>
         <span style={{ fontWeight: 700, color: '#1a0044' }}>
-          {new Date().toLocaleString('default', { month: 'long', year: 'numeric' })}
+          {currentMonth.toLocaleString('default', { month: 'long', year: 'numeric' })}
         </span>
-        <button style={calendarNavButton}>→</button>
+        <button 
+          onClick={() => changeMonth(1)}
+          style={calendarNavButton}
+        >
+          →
+        </button>
       </div>
 
       {/* Week days */}
@@ -155,13 +102,16 @@ export default function Home() {
         gridTemplateColumns: 'repeat(7, 1fr)',
         gap: 6,
       }}>
-        {Array.from({ length: 35 }).map((_, i) => {
-          const date = i - 2;
-          const isToday = date === new Date().getDate();
+        {days.map((day, index) => {
+          const isSelected = day === selectedDate;
+          const today = day !== null && isToday(day);
+
           return (
             <button
-              key={i}
+              key={index}
+              disabled={day === null}
               style={{
+                opacity: day === null ? 0 : 1,
                 aspectRatio: '1 / 1',
                 display: 'flex',
                 alignItems: 'center',
@@ -169,24 +119,34 @@ export default function Home() {
                 borderRadius: 12,
                 fontSize: 14,
                 fontWeight: 500,
-                background: isToday ? '#3B1D86' : 'transparent',
-                color: date > 0 && date <= 31 ? (isToday ? 'white' : '#1a0044') : '#C5C5D0',
+                background: isSelected 
+                  ? '#C5C5D0' 
+                  : today 
+                    ? '#3B1D86' 
+                    : 'transparent',
+                color: day !== null 
+                  ? (today && !isSelected ? 'white' : '#1a0044') 
+                  : 'transparent',
                 border: 'none',
-                cursor: 'pointer',
+                cursor: day !== null ? 'pointer' : 'default',
                 transition: 'all 0.2s ease',
               }}
+              onClick={() => {
+                setSelectedDate(isSelected ? null : day);
+              }}
               onMouseEnter={(e) => {
-                if (!isToday && date > 0 && date <= 31) {
+                if (day !== null && !isSelected && !today) {
                   e.currentTarget.style.background = '#F0EEF8';
                 }
               }}
               onMouseLeave={(e) => {
-                if (!isToday) {
+                if (day !== null && !isSelected && !today) {
+                  // Reset to the correct background based on state
                   e.currentTarget.style.background = 'transparent';
                 }
               }}
             >
-              {date > 0 && date <= 31 ? date : ''}
+              {day !== null ? day : ''}
             </button>
           );
         })}
@@ -220,6 +180,110 @@ export default function Home() {
       </div>
     </div>
   );
+}
+
+export default function Home() {
+  const [activeTab, setActiveTab] = useState<'chat' | 'calendar'>('chat');
+  const [messages, setMessages] = useState<Message[]>([
+    {
+      id: '1',
+      role: 'assistant',
+      content: "Hi there. I'm Solace. How are you feeling today?",
+    },
+  ]);
+  const [input, setInput] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const supabase = createClient();
+
+  // ✅ Get user name and update welcome message
+  useEffect(() => {
+    supabase.auth.getUser().then(({ data }) => {
+      if (data.user) {
+        const name = data.user.user_metadata?.full_name ?? null;
+        if (name) {
+          setMessages([
+            {
+              id: '1',
+              role: 'assistant',
+              content: `Hi there ${name}. I'm Solace. How are you feeling today?`,
+            },
+          ]);
+        }
+      }
+    });
+  }, []);
+
+  // Auto-scroll to bottom of messages
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [messages]);
+
+  // Auto-resize textarea
+  useEffect(() => {
+    if (textareaRef.current) {
+      textareaRef.current.style.height = 'auto';
+      textareaRef.current.style.height = `${Math.min(textareaRef.current.scrollHeight, 150)}px`;
+    }
+  }, [input]);
+
+  const handleSendMessage = async () => {
+    if (!input.trim() || isLoading) return;
+
+    const userMessage: Message = {
+      id: Date.now().toString(),
+      role: 'user',
+      content: input.trim(),
+    };
+
+    setMessages((prev) => [...prev, userMessage]);
+    setInput('');
+    setIsLoading(true);
+
+    const previousMessages = messages.slice(-10).map(msg => ({
+      role: msg.role,
+      content: msg.content
+    }));
+
+    try {
+    const response = await fetch('/api/chat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+
+      body: JSON.stringify({ 
+        message: userMessage.content,
+        history: previousMessages  
+      }),
+    });
+    
+    const data = await response.json();
+    
+    const assistantMessage: Message = {
+      id: (Date.now() + 1).toString(),
+      role: 'assistant',
+      content: data.reply,
+    };
+    setMessages((prev) => [...prev, assistantMessage]);
+    } catch (error) {
+      console.error('Chat error:', error);
+      const errorMessage: Message = {
+        id: (Date.now() + 1).toString(),
+        role: 'assistant',
+        content: 'Sorry, I had trouble responding. Please try again.',
+      };
+      setMessages((prev) => [...prev, errorMessage]);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      handleSendMessage();
+    }
+  };
 
   return (
     <div style={{ minHeight: "100vh", background: "#F5F6FB" }}>
@@ -401,7 +465,7 @@ export default function Home() {
   );
 }
 
-/* -------------------- Header / Footer (same as original) -------------------- */
+/* -------------------- Header / Footer -------------------- */
 
 function Header() {
   return (
