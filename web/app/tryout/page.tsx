@@ -95,47 +95,9 @@ function CalendarView() {
     
     return { top, height };
   };
-
-  const handleGoogleLogin = async () => {
-  setIsLoading(true);
-  try {
-    const supabase = createClient();
-    await supabase.auth.signOut();
-    
-    const { error } = await supabase.auth.signInWithOAuth({
-      provider: 'google',
-      options: {
-        redirectTo: `${window.location.origin}/auth/callback`,
-        scopes: 'https://www.googleapis.com/auth/calendar.readonly', // ← Add this!
-        queryParams: {
-          access_type: 'offline', // ← Gets refresh token
-          prompt: 'consent',      // ← Forces consent screen
-        },
-      },
-    });
-    
-    if (error) console.error('Sign-in error:', error);
-  } catch (error) {
-    console.error('Google login error:', error);
-  } finally {
-    setIsLoading(false);
-  }
 };
 
   // Check if an event is at a specific minute slot
-  const getEventsForSlot = (events: any[], slotHour: number, slotMinute: number) => {
-    const slotMinutes = slotHour * 60 + slotMinute;
-    
-    return events.filter(event => {
-      const start = new Date(event.start);
-      const end = new Date(event.end);
-      const startMinutes = start.getHours() * 60 + start.getMinutes();
-      const endMinutes = end.getHours() * 60 + end.getMinutes();
-      
-      // Event covers this slot if slot is between start and end
-      return slotMinutes >= startMinutes && slotMinutes < endMinutes;
-    });
-  };
 
   return (
     <div style={{ flex: 1, overflowY: 'auto', padding: '20px 24px' }}>
