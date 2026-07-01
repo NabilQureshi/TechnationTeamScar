@@ -95,7 +95,6 @@ function CalendarView() {
     
     return { top, height };
   };
-};
 
   // Check if an event is at a specific minute slot
 
