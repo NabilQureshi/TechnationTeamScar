@@ -13,10 +13,18 @@ type Message = {
 
 // Create a separate Calendar component with its own state
 function CalendarView() {
-  const [selectedDate, setSelectedDate] = useState<number | null>(null);
+  const [selectedDate, setSelectedDate] = useState<Date | null>(null);
   const [currentMonth, setCurrentMonth] = useState(new Date());
 
-  // Get days in month
+  // Mock events with start/end times
+  const [events] = useState([
+    { id: '1', title: 'Therapy Session', start: '2026-06-18T09:00:00', end: '2026-06-18T10:00:00' },
+    { id: '2', title: 'Morning Walk', start: '2026-06-18T07:30:00', end: '2026-06-18T10:15:00' },
+    { id: '3', title: 'Team Meeting', start: '2026-06-18T14:00:00', end: '2026-06-18T14:45:00' },
+    { id: '4', title: 'Gym', start: '2026-06-18T17:00:00', end: '2026-06-18T18:30:00' },
+    { id: '5', title: 'Reading', start: '2026-06-18T20:00:00', end: '2026-06-18T21:30:00' },
+  ]);
+
   const getDaysInMonth = (date: Date) => {
     const year = date.getFullYear();
     const month = date.getMonth();
@@ -26,11 +34,10 @@ function CalendarView() {
   };
 
   const { firstDay, daysInMonth } = getDaysInMonth(currentMonth);
-  
-  // Create array of days with proper spacing
+
   const days = [];
   const totalSlots = Math.ceil((firstDay + daysInMonth) / 7) * 7;
-  
+
   for (let i = 0; i < totalSlots; i++) {
     const dayNumber = i - firstDay + 1;
     days.push(dayNumber > 0 && dayNumber <= daysInMonth ? dayNumber : null);
@@ -40,7 +47,7 @@ function CalendarView() {
     const newDate = new Date(currentMonth);
     newDate.setMonth(newDate.getMonth() + delta);
     setCurrentMonth(newDate);
-    setSelectedDate(null); // Reset selection when changing months
+    setSelectedDate(null);
   };
 
   const isToday = (day: number) => {
@@ -48,6 +55,86 @@ function CalendarView() {
     return currentMonth.getMonth() === today.getMonth() &&
            currentMonth.getFullYear() === today.getFullYear() &&
            day === today.getDate();
+  };
+
+  const handleDateClick = (day: number) => {
+  const clickedDate = new Date(currentMonth.getFullYear(), currentMonth.getMonth(), day);
+  
+  if (selectedDate && 
+      selectedDate.getDate() === day &&
+      selectedDate.getMonth() === currentMonth.getMonth() &&
+      selectedDate.getFullYear() === currentMonth.getFullYear()) {
+    setSelectedDate(null);
+  } else {
+    setSelectedDate(clickedDate);
+  }
+};
+
+  const getEventsForDate = (date: Date) => {
+    if (!date) return [];
+    const dateStr = date.toISOString().split('T')[0];
+    return events.filter(e => e.start.startsWith(dateStr));
+  };
+
+  const selectedEvents = selectedDate ? getEventsForDate(selectedDate) : [];
+
+  // Calculate event position and height (15-minute increments)
+  const calculateEventStyle = (event: any) => {
+    const start = new Date(event.start);
+    const end = new Date(event.end);
+    
+    // Get minutes from midnight
+    const startMinutes = start.getHours() * 60 + start.getMinutes();
+    const endMinutes = end.getHours() * 60 + end.getMinutes();
+    const durationMinutes = endMinutes - startMinutes;
+    
+    // Each hour = 60px height, each minute = 1px
+    // 15 minutes = 15px height
+    const top = startMinutes; // 1px per minute
+    const height = durationMinutes; // 1px per minute
+    
+    return { top, height };
+  };
+
+  const handleGoogleLogin = async () => {
+  setIsLoading(true);
+  try {
+    const supabase = createClient();
+    await supabase.auth.signOut();
+    
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider: 'google',
+      options: {
+        redirectTo: `${window.location.origin}/auth/callback`,
+        scopes: 'https://www.googleapis.com/auth/calendar.readonly', // ← Add this!
+        queryParams: {
+          access_type: 'offline', // ← Gets refresh token
+          prompt: 'consent',      // ← Forces consent screen
+        },
+      },
+    });
+    
+    if (error) console.error('Sign-in error:', error);
+  } catch (error) {
+    console.error('Google login error:', error);
+  } finally {
+    setIsLoading(false);
+  }
+};
+
+  // Check if an event is at a specific minute slot
+  const getEventsForSlot = (events: any[], slotHour: number, slotMinute: number) => {
+    const slotMinutes = slotHour * 60 + slotMinute;
+    
+    return events.filter(event => {
+      const start = new Date(event.start);
+      const end = new Date(event.end);
+      const startMinutes = start.getHours() * 60 + start.getMinutes();
+      const endMinutes = end.getHours() * 60 + end.getMinutes();
+      
+      // Event covers this slot if slot is between start and end
+      return slotMinutes >= startMinutes && slotMinutes < endMinutes;
+    });
   };
 
   return (
@@ -61,95 +148,252 @@ function CalendarView() {
         </p>
       </div>
 
-      {/* Month header */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
-        <button 
-          onClick={() => changeMonth(-1)}
-          style={calendarNavButton}
-        >
-          ←
-        </button>
-        <span style={{ fontWeight: 700, color: '#1a0044' }}>
-          {currentMonth.toLocaleString('default', { month: 'long', year: 'numeric' })}
-        </span>
-        <button 
-          onClick={() => changeMonth(1)}
-          style={calendarNavButton}
-        >
-          →
-        </button>
-      </div>
-
-      {/* Week days */}
       <div style={{
-        display: 'grid',
-        gridTemplateColumns: 'repeat(7, 1fr)',
-        gap: 6,
-        textAlign: 'center',
-        fontSize: 12,
-        fontWeight: 600,
-        color: '#8B8B9A',
-        marginBottom: 8,
+        display: 'flex',
+        gap: 20,
+        minHeight: '500px',
       }}>
-        {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((day) => (
-          <div key={day}>{day}</div>
-        ))}
-      </div>
+        {/* Left: Month Grid */}
+        <div style={{
+          flex: selectedDate ? '0.45' : '1',
+          transition: 'flex 0.3s ease',
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
+            <button onClick={() => changeMonth(-1)} style={calendarNavButton}>←</button>
+            <span style={{ fontWeight: 700, color: '#1a0044' }}>
+              {currentMonth.toLocaleString('default', { month: 'long', year: 'numeric' })}
+            </span>
+            <button onClick={() => changeMonth(1)} style={calendarNavButton}>→</button>
+          </div>
 
-      {/* Calendar grid */}
-      <div style={{
-        display: 'grid',
-        gridTemplateColumns: 'repeat(7, 1fr)',
-        gap: 6,
-      }}>
-        {days.map((day, index) => {
-          const isSelected = day === selectedDate;
-          const today = day !== null && isToday(day);
+          <div style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(7, 1fr)',
+            gap: 6,
+            textAlign: 'center',
+            fontSize: 12,
+            fontWeight: 600,
+            color: '#8B8B9A',
+            marginBottom: 8,
+          }}>
+            {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((day) => (
+              <div key={day}>{day}</div>
+            ))}
+          </div>
 
-          return (
-            <button
-              key={index}
-              disabled={day === null}
-              style={{
-                opacity: day === null ? 0 : 1,
-                aspectRatio: '1 / 1',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                borderRadius: 12,
-                fontSize: 14,
-                fontWeight: 500,
-                background: isSelected 
-                  ? '#C5C5D0' 
-                  : today 
-                    ? '#3B1D86' 
-                    : 'transparent',
-                color: day !== null 
-                  ? (today && !isSelected ? 'white' : '#1a0044') 
-                  : 'transparent',
-                border: 'none',
-                cursor: day !== null ? 'pointer' : 'default',
-                transition: 'all 0.2s ease',
-              }}
-              onClick={() => {
-                setSelectedDate(isSelected ? null : day);
-              }}
-              onMouseEnter={(e) => {
-                if (day !== null && !isSelected && !today) {
-                  e.currentTarget.style.background = '#F0EEF8';
-                }
-              }}
-              onMouseLeave={(e) => {
-                if (day !== null && !isSelected && !today) {
-                  // Reset to the correct background based on state
-                  e.currentTarget.style.background = 'transparent';
-                }
-              }}
-            >
-              {day !== null ? day : ''}
-            </button>
-          );
-        })}
+          <div style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(7, 1fr)',
+            gap: 6,
+          }}>
+            {days.map((day, index) => {
+              const isSelected = selectedDate && 
+                selectedDate.getDate() === day &&
+                selectedDate.getMonth() === currentMonth.getMonth();
+              const today = day !== null && isToday(day);
+
+              return (
+                <button
+                  key={index}
+                  disabled={day === null}
+                  style={{
+                    opacity: day === null ? 0 : 1,
+                    aspectRatio: '1 / 1',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    borderRadius: 12,
+                    fontSize: 14,
+                    fontWeight: isSelected ? 700 : 500,
+                    background: isSelected ? '#3B1D86' : today && !isSelected ? '#F0EEF8' : 'transparent',
+                    color: isSelected ? 'white' : '#1a0044',
+                    border: today && !isSelected ? '2px solid #3B1D86' : 'none',
+                    cursor: day !== null ? 'pointer' : 'default',
+                    transition: 'all 0.2s ease',
+                  }}
+                  onClick={() => day !== null && handleDateClick(day)}
+                  onMouseEnter={(e) => {
+                    if (day !== null && !isSelected && !today) {
+                      e.currentTarget.style.background = '#F0EEF8';
+                    }
+                  }}
+                  onMouseLeave={(e) => {
+                    if (day !== null && !isSelected && !today) {
+                      e.currentTarget.style.background = 'transparent';
+                    }
+                  }}
+                >
+                  {day !== null ? day : ''}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* Right: Day View with Time-Scaled Events */}
+        {selectedDate && (
+          <div style={{
+            flex: '0.55',
+            borderLeft: '1px solid #E8E8EC',
+            paddingLeft: 20,
+            minHeight: '500px',
+            maxHeight: '600px',
+            overflowY: 'auto',
+            position: 'relative',
+          }}>
+            <div style={{
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              marginBottom: 16,
+            }}>
+              <h3 style={{
+                fontSize: 18,
+                fontWeight: 700,
+                color: '#1a0044',
+                margin: 0,
+              }}>
+                {selectedDate.toLocaleDateString('default', { 
+                  weekday: 'long', 
+                  month: 'long', 
+                  day: 'numeric' 
+                })}
+              </h3>
+              <button
+                onClick={() => setSelectedDate(null)}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  fontSize: 20,
+                  cursor: 'pointer',
+                  color: '#8B8B9A',
+                }}
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Day view with time slots (15-minute increments) */}
+            <div style={{
+              position: 'relative',
+              minHeight: '1440px', // 24 hours * 60px per hour
+            }}>
+              {/* Time labels and grid lines */}
+              {Array.from({ length: 24 }, (_, hour) => {
+                const displayHour = hour === 0 ? 12 : hour > 12 ? hour - 12 : hour;
+                const ampm = hour >= 12 ? 'PM' : 'AM';
+                const isNow = new Date().getHours() === hour && 
+                             selectedDate.toDateString() === new Date().toDateString();
+
+                return (
+                  <div
+                    key={hour}
+                    style={{
+                      position: 'relative',
+                      height: '60px', // 1 hour = 60px
+                      borderBottom: '1px solid #F0F0F4',
+                      display: 'flex',
+                      alignItems: 'flex-start',
+                      background: isNow ? 'rgba(59, 29, 134, 0.05)' : 'transparent',
+                    }}
+                  >
+                    <span style={{
+                      fontSize: 12,
+                      fontWeight: 600,
+                      color: isNow ? '#3B1D86' : '#8B8B9A',
+                      minWidth: 45,
+                      paddingTop: 2,
+                    }}>
+                      {displayHour}:00 {ampm}
+                    </span>
+                    
+                    {/* Quarter-hour grid lines */}
+                    <div style={{
+                      flex: 1,
+                      position: 'relative',
+                      height: '100%',
+                    }}>
+                      {[0, 15, 30, 45].map((minute) => (
+                        <div
+                          key={minute}
+                          style={{
+                            position: 'absolute',
+                            top: `${(minute / 60) * 100}%`,
+                            left: 0,
+                            right: 0,
+                            borderTop: minute === 0 
+                              ? '1px solid #E8E8EC' 
+                              : '1px dashed #F0F0F4',
+                            height: 0,
+                          }}
+                        />
+                      ))}
+                    </div>
+                  </div>
+                );
+              })}
+
+              {/* Events overlaid */}
+              {selectedEvents.map((event) => {
+                const { top, height } = calculateEventStyle(event);
+                const startTime = new Date(event.start);
+                const endTime = new Date(event.end);
+                
+                return (
+                  <div
+                    key={event.id}
+                    style={{
+                      position: 'absolute',
+                      top: `${top}px`,
+                      left: '65px',
+                      right: '10px',
+                      height: `${height}px`,
+                      minHeight: '20px',
+                      background: 'linear-gradient(135deg, #3B1D86 0%, #2A005C 100%)',
+                      color: 'white',
+                      padding: '4px 8px',
+                      borderRadius: 6,
+                      fontSize: 12,
+                      fontWeight: 500,
+                      display: 'flex',
+                      flexDirection: 'column',
+                      justifyContent: 'center',
+                      overflow: 'hidden',
+                      boxShadow: '0 2px 8px rgba(59, 29, 134, 0.2)',
+                      zIndex: 10,
+                      border: '1px solid rgba(255,255,255,0.1)',
+                    }}
+                  >
+                    <div style={{ fontWeight: 600, fontSize: 12 }}>
+                      {event.title}
+                    </div>
+                    <div style={{ 
+                      fontSize: 10, 
+                      opacity: 0.8,
+                      marginTop: 2,
+                    }}>
+                      {startTime.toLocaleTimeString('default', { hour: 'numeric', minute: '2-digit' })} 
+                      - {endTime.toLocaleTimeString('default', { hour: 'numeric', minute: '2-digit' })}
+                    </div>
+                  </div>
+                );
+              })}
+
+              {selectedEvents.length === 0 && (
+                <div style={{
+                  position: 'absolute',
+                  top: '50%',
+                  left: '50%',
+                  transform: 'translate(-50%, -50%)',
+                  color: '#8B8B9A',
+                  fontSize: 14,
+                }}>
+                  No events on this day ✨
+                </div>
+              )}
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Mood summary */}
