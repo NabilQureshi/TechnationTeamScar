@@ -4,6 +4,7 @@ import { useState, useRef, useEffect } from 'react';
 import Image from "next/image";
 import Link from "next/link";
 import { createClient } from '@/supabase/client';
+import { useCalendarEvents } from '@/hooks/useCalendarEvents';
 
 type Message = {
   id: string;
@@ -11,19 +12,18 @@ type Message = {
   content: string;
 };
 
-// Create a separate Calendar component with its own state
 function CalendarView() {
   const [selectedDate, setSelectedDate] = useState<Date | null>(null);
   const [currentMonth, setCurrentMonth] = useState(new Date());
 
-  // Mock events with start/end times
-  const [events] = useState([
-    { id: '1', title: 'Therapy Session', start: '2026-06-18T09:00:00', end: '2026-06-18T10:00:00' },
-    { id: '2', title: 'Morning Walk', start: '2026-06-18T07:30:00', end: '2026-06-18T10:15:00' },
-    { id: '3', title: 'Team Meeting', start: '2026-06-18T14:00:00', end: '2026-06-18T14:45:00' },
-    { id: '4', title: 'Gym', start: '2026-06-18T17:00:00', end: '2026-06-18T18:30:00' },
-    { id: '5', title: 'Reading', start: '2026-06-18T20:00:00', end: '2026-06-18T21:30:00' },
-  ]);
+  const startOfMonth = new Date(currentMonth.getFullYear(), currentMonth.getMonth(), 1);
+  const endOfMonth = new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1, 0);
+  const { events: fetchedEvents, loading, error } = useCalendarEvents(startOfMonth, endOfMonth);
+
+  if (loading) return <div>Loading...</div>;
+  if (error) return <div>Please sign in</div>;
+
+  const events = fetchedEvents || [];
 
   const getDaysInMonth = (date: Date) => {
     const year = date.getFullYear();
@@ -58,45 +58,67 @@ function CalendarView() {
   };
 
   const handleDateClick = (day: number) => {
-  const clickedDate = new Date(currentMonth.getFullYear(), currentMonth.getMonth(), day);
-  
-  if (selectedDate && 
-      selectedDate.getDate() === day &&
-      selectedDate.getMonth() === currentMonth.getMonth() &&
-      selectedDate.getFullYear() === currentMonth.getFullYear()) {
-    setSelectedDate(null);
-  } else {
-    setSelectedDate(clickedDate);
-  }
-};
+    const clickedDate = new Date(currentMonth.getFullYear(), currentMonth.getMonth(), day);
+    
+    if (selectedDate && 
+        selectedDate.getDate() === day &&
+        selectedDate.getMonth() === currentMonth.getMonth() &&
+        selectedDate.getFullYear() === currentMonth.getFullYear()) {
+      setSelectedDate(null);
+    } else {
+      setSelectedDate(clickedDate);
+    }
+  };
 
   const getEventsForDate = (date: Date) => {
     if (!date) return [];
     const dateStr = date.toISOString().split('T')[0];
-    return events.filter(e => e.start.startsWith(dateStr));
+    return events.filter(e => {
+      // Convert stored UTC time to local date string for comparison
+      const eventDate = new Date(e.start_time);
+      const localDateStr = eventDate.toLocaleDateString('en-CA'); // YYYY-MM-DD in local time
+      return localDateStr === dateStr;
+    });
   };
 
   const selectedEvents = selectedDate ? getEventsForDate(selectedDate) : [];
 
-  // Calculate event position and height (15-minute increments)
+  // FIXED: Calculate event position using LOCAL time, not UTC
   const calculateEventStyle = (event: any) => {
-    const start = new Date(event.start);
-    const end = new Date(event.end);
+    // Parse the stored UTC timestamp
+    const start = new Date(event.start_time);
+    const end = new Date(event.end_time);
     
-    // Get minutes from midnight
+    // Convert to LOCAL time by using local getters
     const startMinutes = start.getHours() * 60 + start.getMinutes();
     const endMinutes = end.getHours() * 60 + end.getMinutes();
-    const durationMinutes = endMinutes - startMinutes;
     
-    // Each hour = 60px height, each minute = 1px
-    // 15 minutes = 15px height
-    const top = startMinutes; // 1px per minute
-    const height = durationMinutes; // 1px per minute
+    // Check if this is an all-day event (starts at 00:00 and ends at 00:00 next day)
+    const isAllDay = startMinutes === 0 && endMinutes === 0 && 
+                     start.toLocaleDateString('en-CA') !== end.toLocaleDateString('en-CA');
     
-    return { top, height };
+    let top = startMinutes;
+    let durationMinutes;
+    
+    if (isAllDay) {
+      // Show all-day events at the top as a banner
+      top = 0;
+      durationMinutes = 30; // Compact banner
+    } else if (endMinutes === 0 && startMinutes !== 0) {
+      // Event ends at midnight
+      durationMinutes = 24 * 60 - startMinutes;
+    } else if (endMinutes <= startMinutes) {
+      // Same-day or overnight event
+      durationMinutes = endMinutes + 24 * 60 - startMinutes;
+    } else {
+      // Normal event
+      durationMinutes = endMinutes - startMinutes;
+    }
+    
+    const height = isAllDay ? 30 : Math.max(durationMinutes, 25);
+    
+    return { top, height, isAllDay };
   };
-
-  // Check if an event is at a specific minute slot
 
   return (
     <div style={{ flex: 1, overflowY: 'auto', padding: '20px 24px' }}>
@@ -109,280 +131,308 @@ function CalendarView() {
         </p>
       </div>
 
-      <div style={{
-        display: 'flex',
-        gap: 20,
-        minHeight: '500px',
-      }}>
-        {/* Left: Month Grid */}
-        <div style={{
-          flex: selectedDate ? '0.45' : '1',
-          transition: 'flex 0.3s ease',
-        }}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
-            <button onClick={() => changeMonth(-1)} style={calendarNavButton}>←</button>
-            <span style={{ fontWeight: 700, color: '#1a0044' }}>
-              {currentMonth.toLocaleString('default', { month: 'long', year: 'numeric' })}
-            </span>
-            <button onClick={() => changeMonth(1)} style={calendarNavButton}>→</button>
-          </div>
-
-          <div style={{
-            display: 'grid',
-            gridTemplateColumns: 'repeat(7, 1fr)',
-            gap: 6,
-            textAlign: 'center',
-            fontSize: 12,
-            fontWeight: 600,
-            color: '#8B8B9A',
-            marginBottom: 8,
-          }}>
-            {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((day) => (
-              <div key={day}>{day}</div>
-            ))}
-          </div>
-
-          <div style={{
-            display: 'grid',
-            gridTemplateColumns: 'repeat(7, 1fr)',
-            gap: 6,
-          }}>
-            {days.map((day, index) => {
-              const isSelected = selectedDate && 
-                selectedDate.getDate() === day &&
-                selectedDate.getMonth() === currentMonth.getMonth();
-              const today = day !== null && isToday(day);
-
-              return (
-                <button
-                  key={index}
-                  disabled={day === null}
-                  style={{
-                    opacity: day === null ? 0 : 1,
-                    aspectRatio: '1 / 1',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    borderRadius: 12,
-                    fontSize: 14,
-                    fontWeight: isSelected ? 700 : 500,
-                    background: isSelected ? '#3B1D86' : today && !isSelected ? '#F0EEF8' : 'transparent',
-                    color: isSelected ? 'white' : '#1a0044',
-                    border: today && !isSelected ? '2px solid #3B1D86' : 'none',
-                    cursor: day !== null ? 'pointer' : 'default',
-                    transition: 'all 0.2s ease',
-                  }}
-                  onClick={() => day !== null && handleDateClick(day)}
-                  onMouseEnter={(e) => {
-                    if (day !== null && !isSelected && !today) {
-                      e.currentTarget.style.background = '#F0EEF8';
-                    }
-                  }}
-                  onMouseLeave={(e) => {
-                    if (day !== null && !isSelected && !today) {
-                      e.currentTarget.style.background = 'transparent';
-                    }
-                  }}
-                >
-                  {day !== null ? day : ''}
-                </button>
-              );
-            })}
-          </div>
+      {loading ? (
+        <div style={{ display: 'flex', justifyContent: 'center', padding: '40px' }}>
+          <p style={{ color: '#8B8B9A' }}>Loading your calendar...</p>
         </div>
-
-        {/* Right: Day View with Time-Scaled Events */}
-        {selectedDate && (
+      ) : (
+        <>
           <div style={{
-            flex: '0.55',
-            borderLeft: '1px solid #E8E8EC',
-            paddingLeft: 20,
+            display: 'flex',
+            gap: 20,
             minHeight: '500px',
-            maxHeight: '600px',
-            overflowY: 'auto',
-            position: 'relative',
           }}>
+            {/* Left: Month Grid */}
             <div style={{
-              display: 'flex',
-              justifyContent: 'space-between',
-              alignItems: 'center',
-              marginBottom: 16,
+              flex: selectedDate ? '0.45' : '1',
+              transition: 'flex 0.3s ease',
             }}>
-              <h3 style={{
-                fontSize: 18,
-                fontWeight: 700,
-                color: '#1a0044',
-                margin: 0,
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
+                <button onClick={() => changeMonth(-1)} style={calendarNavButton}>←</button>
+                <span style={{ fontWeight: 700, color: '#1a0044' }}>
+                  {currentMonth.toLocaleString('default', { month: 'long', year: 'numeric' })}
+                </span>
+                <button onClick={() => changeMonth(1)} style={calendarNavButton}>→</button>
+              </div>
+
+              <div style={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(7, 1fr)',
+                gap: 6,
+                textAlign: 'center',
+                fontSize: 12,
+                fontWeight: 600,
+                color: '#8B8B9A',
+                marginBottom: 8,
               }}>
-                {selectedDate.toLocaleDateString('default', { 
-                  weekday: 'long', 
-                  month: 'long', 
-                  day: 'numeric' 
+                {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((day) => (
+                  <div key={day}>{day}</div>
+                ))}
+              </div>
+
+              <div style={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(7, 1fr)',
+                gap: 6,
+              }}>
+                {days.map((day, index) => {
+                  const isSelected = selectedDate && 
+                    selectedDate.getDate() === day &&
+                    selectedDate.getMonth() === currentMonth.getMonth();
+                  const today = day !== null && isToday(day);
+
+                  return (
+                    <button
+                      key={index}
+                      disabled={day === null}
+                      style={{
+                        opacity: day === null ? 0 : 1,
+                        aspectRatio: '1 / 1',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        borderRadius: 12,
+                        fontSize: 14,
+                        fontWeight: isSelected ? 700 : 500,
+                        background: isSelected ? '#3B1D86' : today && !isSelected ? '#F0EEF8' : 'transparent',
+                        color: isSelected ? 'white' : '#1a0044',
+                        border: today && !isSelected ? '2px solid #3B1D86' : 'none',
+                        cursor: day !== null ? 'pointer' : 'default',
+                        transition: 'all 0.2s ease',
+                      }}
+                      onClick={() => day !== null && handleDateClick(day)}
+                      onMouseEnter={(e) => {
+                        if (day !== null && !isSelected && !today) {
+                          e.currentTarget.style.background = '#F0EEF8';
+                        }
+                      }}
+                      onMouseLeave={(e) => {
+                        if (day !== null && !isSelected && !today) {
+                          e.currentTarget.style.background = 'transparent';
+                        }
+                      }}
+                    >
+                      {day !== null ? day : ''}
+                    </button>
+                  );
                 })}
-              </h3>
-              <button
-                onClick={() => setSelectedDate(null)}
-                style={{
-                  background: 'none',
-                  border: 'none',
-                  fontSize: 20,
-                  cursor: 'pointer',
-                  color: '#8B8B9A',
-                }}
-              >
-                ✕
-              </button>
+              </div>
             </div>
 
-            {/* Day view with time slots (15-minute increments) */}
-            <div style={{
-              position: 'relative',
-              minHeight: '1440px', // 24 hours * 60px per hour
-            }}>
-              {/* Time labels and grid lines */}
-              {Array.from({ length: 24 }, (_, hour) => {
-                const displayHour = hour === 0 ? 12 : hour > 12 ? hour - 12 : hour;
-                const ampm = hour >= 12 ? 'PM' : 'AM';
-                const isNow = new Date().getHours() === hour && 
-                             selectedDate.toDateString() === new Date().toDateString();
-
-                return (
-                  <div
-                    key={hour}
-                    style={{
-                      position: 'relative',
-                      height: '60px', // 1 hour = 60px
-                      borderBottom: '1px solid #F0F0F4',
-                      display: 'flex',
-                      alignItems: 'flex-start',
-                      background: isNow ? 'rgba(59, 29, 134, 0.05)' : 'transparent',
-                    }}
-                  >
-                    <span style={{
-                      fontSize: 12,
-                      fontWeight: 600,
-                      color: isNow ? '#3B1D86' : '#8B8B9A',
-                      minWidth: 45,
-                      paddingTop: 2,
-                    }}>
-                      {displayHour}:00 {ampm}
-                    </span>
-                    
-                    {/* Quarter-hour grid lines */}
-                    <div style={{
-                      flex: 1,
-                      position: 'relative',
-                      height: '100%',
-                    }}>
-                      {[0, 15, 30, 45].map((minute) => (
-                        <div
-                          key={minute}
-                          style={{
-                            position: 'absolute',
-                            top: `${(minute / 60) * 100}%`,
-                            left: 0,
-                            right: 0,
-                            borderTop: minute === 0 
-                              ? '1px solid #E8E8EC' 
-                              : '1px dashed #F0F0F4',
-                            height: 0,
-                          }}
-                        />
-                      ))}
-                    </div>
-                  </div>
-                );
-              })}
-
-              {/* Events overlaid */}
-              {selectedEvents.map((event) => {
-                const { top, height } = calculateEventStyle(event);
-                const startTime = new Date(event.start);
-                const endTime = new Date(event.end);
-                
-                return (
-                  <div
-                    key={event.id}
-                    style={{
-                      position: 'absolute',
-                      top: `${top}px`,
-                      left: '65px',
-                      right: '10px',
-                      height: `${height}px`,
-                      minHeight: '20px',
-                      background: 'linear-gradient(135deg, #3B1D86 0%, #2A005C 100%)',
-                      color: 'white',
-                      padding: '4px 8px',
-                      borderRadius: 6,
-                      fontSize: 12,
-                      fontWeight: 500,
-                      display: 'flex',
-                      flexDirection: 'column',
-                      justifyContent: 'center',
-                      overflow: 'hidden',
-                      boxShadow: '0 2px 8px rgba(59, 29, 134, 0.2)',
-                      zIndex: 10,
-                      border: '1px solid rgba(255,255,255,0.1)',
-                    }}
-                  >
-                    <div style={{ fontWeight: 600, fontSize: 12 }}>
-                      {event.title}
-                    </div>
-                    <div style={{ 
-                      fontSize: 10, 
-                      opacity: 0.8,
-                      marginTop: 2,
-                    }}>
-                      {startTime.toLocaleTimeString('default', { hour: 'numeric', minute: '2-digit' })} 
-                      - {endTime.toLocaleTimeString('default', { hour: 'numeric', minute: '2-digit' })}
-                    </div>
-                  </div>
-                );
-              })}
-
-              {selectedEvents.length === 0 && (
+            {/* Right: Day View with Time-Scaled Events */}
+            {selectedDate && (
+              <div style={{
+                flex: '0.55',
+                borderLeft: '1px solid #E8E8EC',
+                paddingLeft: 20,
+                minHeight: '500px',
+                maxHeight: '600px',
+                overflowY: 'auto',
+                position: 'relative',
+              }}>
                 <div style={{
-                  position: 'absolute',
-                  top: '50%',
-                  left: '50%',
-                  transform: 'translate(-50%, -50%)',
-                  color: '#8B8B9A',
-                  fontSize: 14,
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  marginBottom: 16,
                 }}>
-                  No events on this day ✨
+                  <h3 style={{
+                    fontSize: 18,
+                    fontWeight: 700,
+                    color: '#1a0044',
+                    margin: 0,
+                  }}>
+                    {selectedDate.toLocaleDateString('default', { 
+                      weekday: 'long', 
+                      month: 'long', 
+                      day: 'numeric' 
+                    })}
+                  </h3>
+                  <button
+                    onClick={() => setSelectedDate(null)}
+                    style={{
+                      background: 'none',
+                      border: 'none',
+                      fontSize: 20,
+                      cursor: 'pointer',
+                      color: '#8B8B9A',
+                    }}
+                  >
+                    ✕
+                  </button>
                 </div>
-              )}
+
+                <div style={{
+                  position: 'relative',
+                  minHeight: '1440px',
+                }}>
+                  {Array.from({ length: 24 }, (_, hour) => {
+                    const displayHour = hour === 0 ? 12 : hour > 12 ? hour - 12 : hour;
+                    const ampm = hour >= 12 ? 'PM' : 'AM';
+                    const isNow = new Date().getHours() === hour && 
+                                 selectedDate.toDateString() === new Date().toDateString();
+
+                    return (
+                      <div
+                        key={hour}
+                        style={{
+                          position: 'relative',
+                          height: '60px',
+                          borderBottom: '1px solid #F0F0F4',
+                          display: 'flex',
+                          alignItems: 'flex-start',
+                          background: isNow ? 'rgba(59, 29, 134, 0.05)' : 'transparent',
+                        }}
+                      >
+                        <span style={{
+                          fontSize: 12,
+                          fontWeight: 600,
+                          color: isNow ? '#3B1D86' : '#8B8B9A',
+                          minWidth: 45,
+                          paddingTop: 2,
+                        }}>
+                          {displayHour}:00 {ampm}
+                        </span>
+                        
+                        <div style={{
+                          flex: 1,
+                          position: 'relative',
+                          height: '100%',
+                        }}>
+                          {[0, 15, 30, 45].map((minute) => (
+                            <div
+                              key={minute}
+                              style={{
+                                position: 'absolute',
+                                top: `${(minute / 60) * 100}%`,
+                                left: 0,
+                                right: 0,
+                                borderTop: minute === 0 
+                                  ? '1px solid #E8E8EC' 
+                                  : '1px dashed #F0F0F4',
+                                height: 0,
+                              }}
+                            />
+                          ))}
+                        </div>
+                      </div>
+                    );
+                  })}
+
+                  {selectedEvents.map((event) => {
+                    const { top, height, isAllDay } = calculateEventStyle(event);
+                    const startTime = new Date(event.start_time);
+                    const endTime = new Date(event.end_time);
+                    
+                    return (
+                      <div
+                        key={event.id}
+                        style={{
+                          position: 'absolute',
+                          top: `${top}px`,
+                          left: isAllDay ? '45px' : '65px',
+                          right: '10px',
+                          height: `${height}px`,
+                          background: isAllDay 
+                            ? 'linear-gradient(135deg, #F0EEF8 0%, #E8E4F4 100%)' 
+                            : 'linear-gradient(135deg, #3B1D86 0%, #2A005C 100%)',
+                          color: isAllDay ? '#1a0044' : 'white',
+                          padding: '4px 10px',
+                          borderRadius: 8,
+                          fontSize: 12,
+                          fontWeight: 500,
+                          display: 'flex',
+                          flexDirection: isAllDay ? 'row' : 'column',
+                          justifyContent: 'center',
+                          alignItems: isAllDay ? 'center' : 'flex-start',
+                          gap: isAllDay ? 8 : 0,
+                          overflow: 'hidden',
+                          boxShadow: '0 2px 8px rgba(59, 29, 134, 0.15)',
+                          zIndex: 10,
+                          border: isAllDay ? '1px solid rgba(59, 29, 134, 0.2)' : '1px solid rgba(255,255,255,0.1)',
+                        }}
+                      >
+                        <div style={{ 
+                          fontWeight: 700, 
+                          fontSize: 12,
+                          whiteSpace: 'nowrap',
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                        }}>
+                          {event.title}
+                        </div>
+                        {isAllDay ? (
+                          <div style={{ fontSize: 10, opacity: 0.7, whiteSpace: 'nowrap' }}>
+                            All day
+                          </div>
+                        ) : (
+                          <div style={{ 
+                            fontSize: 10, 
+                            opacity: 0.85,
+                            whiteSpace: 'nowrap',
+                          }}>
+                            {startTime.toLocaleTimeString('en-US', { 
+                              hour: 'numeric', 
+                              minute: '2-digit', 
+                              hour12: true 
+                            })} 
+                            {' - '}
+                            {endTime.toLocaleTimeString('en-US', { 
+                              hour: 'numeric', 
+                              minute: '2-digit', 
+                              hour12: true 
+                            })}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+
+                  {selectedEvents.length === 0 && (
+                    <div style={{
+                      position: 'absolute',
+                      top: '50%',
+                      left: '50%',
+                      transform: 'translate(-50%, -50%)',
+                      color: '#8B8B9A',
+                      fontSize: 14,
+                    }}>
+                      No events on this day ✨
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Mood summary */}
+          <div style={{
+            marginTop: 28,
+            padding: '18px 20px',
+            background: '#FAFAFF',
+            borderRadius: 20,
+            border: '1px solid rgba(59, 29, 134, 0.10)',
+          }}>
+            <h3 style={{ fontSize: 14, fontWeight: 700, color: '#1a0044', margin: '0 0 12px 0' }}>
+              Recent moods
+            </h3>
+            <div style={{ display: 'flex', gap: 20 }}>
+              {[
+                { mood: '😊', day: 'Mon' },
+                { mood: '😐', day: 'Tue' },
+                { mood: '😔', day: 'Wed' },
+                { mood: '😊', day: 'Thu' },
+                { mood: '😌', day: 'Fri' },
+              ].map((item, i) => (
+                <div key={i} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+                  <div style={{ fontSize: 28 }}>{item.mood}</div>
+                  <div style={{ fontSize: 10, color: '#8B8B9A', marginTop: 4 }}>{item.day}</div>
+                </div>
+              ))}
             </div>
           </div>
-        )}
-      </div>
-
-      {/* Mood summary */}
-      <div style={{
-        marginTop: 28,
-        padding: '18px 20px',
-        background: '#FAFAFF',
-        borderRadius: 20,
-        border: '1px solid rgba(59, 29, 134, 0.10)',
-      }}>
-        <h3 style={{ fontSize: 14, fontWeight: 700, color: '#1a0044', margin: '0 0 12px 0' }}>
-          Recent moods
-        </h3>
-        <div style={{ display: 'flex', gap: 20 }}>
-          {[
-            { mood: '😊', day: 'Mon' },
-            { mood: '😐', day: 'Tue' },
-            { mood: '😔', day: 'Wed' },
-            { mood: '😊', day: 'Thu' },
-            { mood: '😌', day: 'Fri' },
-          ].map((item, i) => (
-            <div key={i} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-              <div style={{ fontSize: 28 }}>{item.mood}</div>
-              <div style={{ fontSize: 10, color: '#8B8B9A', marginTop: 4 }}>{item.day}</div>
-            </div>
-          ))}
-        </div>
-      </div>
+        </>
+      )}
     </div>
   );
 }
