@@ -76,17 +76,42 @@ export async function POST(req: Request) {
           maxOutputTokens: 500,
           topP: 0.95,
         },
-        system_instruction: {
+          system_instruction: {
           parts: [{ 
-            text: `You are Solace, a warm, supportive mental wellness companion. Be gentle, empathetic, and helpful. Offer emotional support and practical coping strategies. You will also need to be able to suggest events for the user's schedule if they so ask anything about goals or habits that should improve their future. Keep responses concise and warm, if need be use multiple paragraphs.
+            text: `You are Solace, a warm, supportive mental wellness companion. Be gentle, empathetic, and helpful. Never give medical advice, but offer emotional support and practical coping strategies. Keep responses concise and warm.
 
-IMPORTANT RULES ABOUT CALENDAR:
-- ONLY reference events from the user's actual calendar provided below.
-- NEVER invent, guess, or hallucinate events.
-- If asked about their schedule and the calendar is empty, say "Your calendar looks clear for now."
-- Today's date is ${new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}.
+            CALENDAR RULES:
+            - ONLY reference events from the user's actual calendar provided below.
+            - NEVER invent, guess, or hallucinate events.
+            - Today's date is ${new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}.
 
-${calendarContext}`
+            SCHEDULING RULES:
+            When the user asks you to create or suggest events (workouts, meetings, habits, etc.):
+            1. Check their calendar for conflicts
+            2. Propose specific times that don't overlap with existing events
+            3. End your response with a JSON block containing the proposed events
+
+            Use this EXACT format at the END of your message when proposing events. DATES MUST BE ISO FORMAT like "2026-08-07T08:00:00". Do NOT use words for dates.
+
+            ---EVENTS---
+            [
+              {
+                "title": "Morning Workout",
+                "start": "2026-08-07T08:00:00",
+                "end": "2026-08-07T09:00:00",
+                "recurrence": "RRULE:FREQ=WEEKLY;BYDAY=MO,WE,FR"
+              }
+            ]
+            ---END---
+
+            CRITICAL: The start and end MUST be valid ISO 8601 date strings like "2026-08-07T08:00:00". 
+            Never use "August 7" or any other text format. Use numbers only: YYYY-MM-DDTHH:MM:SS.
+            Today is ${new Date().toISOString().split('T')[0]}.
+
+            Only include the JSON block if you're actually proposing events. Do not include it in normal conversation.
+            The recurrence field is optional - only include it for repeating events.
+
+            ${calendarContext}`
           }]
         }
       }),
@@ -103,9 +128,100 @@ ${calendarContext}`
       throw new Error(data.error?.message || 'API request failed');
     }
 
-    const reply = data.candidates?.[0]?.content?.parts?.[0]?.text || "I'm here for you. Could you tell me more about how you're feeling?";
+    // Extract event proposals from the reply
+    let replyText = data.candidates?.[0]?.content?.parts?.[0]?.text || "I'm here for you. Could you tell me more about how you're feeling?";
+    let proposedEvents: any[] = [];
 
-    return Response.json({ reply, emotion });
+    const eventsMatch = replyText.match(/---EVENTS---\s*([\s\S]*?)\s*---END---/);
+
+    if (eventsMatch) {
+      try {
+        proposedEvents = JSON.parse(eventsMatch[1]);
+        console.log('Raw events from AI:', JSON.stringify(proposedEvents, null, 2));
+        
+        // Remove the JSON block from the displayed message
+        replyText = replyText.replace(/---EVENTS---[\s\S]*?---END---/, '').trim();
+        
+        // Save proposed events to database
+        if (user && proposedEvents.length > 0) {
+          const pendingEvents = proposedEvents.map((e: any, index: number) => {
+            // Validate and fix dates
+            const startDate = new Date(e.start);
+            const endDate = new Date(e.end);
+            
+            if (isNaN(startDate.getTime()) || isNaN(endDate.getTime())) {
+              console.error(`Event ${index} has invalid dates:`, e.start, e.end);
+              return null;
+            }
+            
+            // Convert to proper format
+            const year = startDate.getFullYear();
+            const month = String(startDate.getMonth() + 1).padStart(2, '0');
+            const day = String(startDate.getDate()).padStart(2, '0');
+            const startHours = String(startDate.getHours()).padStart(2, '0');
+            const startMins = String(startDate.getMinutes()).padStart(2, '0');
+            
+            const endYear = endDate.getFullYear();
+            const endMonth = String(endDate.getMonth() + 1).padStart(2, '0');
+            const endDay = String(endDate.getDate()).padStart(2, '0');
+            const endHours = String(endDate.getHours()).padStart(2, '0');
+            const endMins = String(endDate.getMinutes()).padStart(2, '0');
+            
+            return {
+              user_id: user.id,
+              message_id: Date.now().toString() + index,
+              title: e.title || 'Untitled Event',
+              description: e.description || '',
+              start_time: `${year}-${month}-${day}T${startHours}:${startMins}:00`,
+              end_time: `${endYear}-${endMonth}-${endDay}T${endHours}:${endMins}:00`,
+              recurrence_rule: e.recurrence || null,
+              status: 'pending',
+            };
+          }).filter(Boolean);
+          
+          const validEvents = pendingEvents.filter((e: any) => e !== null);
+          if (validEvents.length > 0) {
+            const { data: inserted, error: insertErr } = await supabase
+              .from('pending_events')
+              .insert(validEvents)
+              .select('id, title, start_time, end_time, recurrence_rule, status');
+            
+            if (insertErr) {
+              console.error('Failed to insert pending events:', insertErr);
+              // Fallback: use temp IDs so UI still works
+              proposedEvents = validEvents.map((e: any, i: number) => ({
+                id: `temp-${Date.now()}-${i}`,
+                title: e.title,
+                start_time: e.start_time,
+                end_time: e.end_time,
+                recurrence_rule: e.recurrence_rule || null,
+                status: 'pending',
+              }));
+            } else if (inserted) {
+              proposedEvents = inserted;
+            } else {
+              // Nothing returned, use fallback
+              proposedEvents = validEvents.map((e: any, i: number) => ({
+                id: `temp-${Date.now()}-${i}`,
+                title: e.title,
+                start_time: e.start_time,
+                end_time: e.end_time,
+                recurrence_rule: e.recurrence_rule || null,
+                status: 'pending',
+              }));
+            }
+          }
+        }
+      } catch (e) {
+        console.error('Failed to parse event proposals:', e);
+      }
+    }
+
+    if (eventsMatch) {
+      console.log('Raw events JSON from AI:', eventsMatch[1]);
+    }
+
+    return Response.json({ reply: replyText, emotion, proposedEvents });
   } catch (e: any) {
     console.error('Chat error:', e);
     return Response.json({ error: e?.message ?? "Unknown error" }, { status: 500 });

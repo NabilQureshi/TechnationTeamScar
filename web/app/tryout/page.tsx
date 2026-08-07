@@ -6,10 +6,20 @@ import Link from "next/link";
 import { createClient } from '@/supabase/client';
 import { useCalendarEvents } from '@/hooks/useCalendarEvents';
 
+type ProposedEvent = {
+  id: string;
+  title: string;
+  start_time: string;
+  end_time: string;
+  recurrence_rule?: string | null;
+  status: 'pending' | 'approved' | 'rejected';
+};
+
 type Message = {
   id: string;
   role: 'user' | 'assistant';
   content: string;
+  proposedEvents?: ProposedEvent[];
 };
 
 function CalendarView() {
@@ -301,7 +311,7 @@ function CalendarView() {
                         }}>
                           {[0, 15, 30, 45].map((minute) => (
                             <div
-                              key={minute}
+                              key={`main-min-${hour}-${minute}`}
                               style={{
                                 position: 'absolute',
                                 top: `${(minute / 60) * 100}%`,
@@ -513,11 +523,14 @@ export default function Home() {
     });
     
     const data = await response.json();
+    console.log('FULL API RESPONSE:', data);  // ADD THIS
+    console.log('proposedEvents:', data.proposedEvents);  // ADD THIS
     
     const assistantMessage: Message = {
       id: (Date.now() + 1).toString(),
       role: 'assistant',
       content: data.reply,
+      proposedEvents: data.proposedEvents || undefined,
     };
     setMessages((prev) => [...prev, assistantMessage]);
     } catch (error) {
@@ -537,6 +550,31 @@ export default function Home() {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       handleSendMessage();
+    }
+  };
+
+  const handleEventAction = async (eventId: string, action: 'approve' | 'reject') => {
+    try {
+      const response = await fetch('/api/event-action', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ pendingEventId: eventId, action }),
+      });
+
+      const result = await response.json(); 
+      console.log('Approve result:', result); 
+      
+      if (response.ok) {
+        // Update the message's proposedEvents status
+        setMessages(prev => prev.map(msg => ({
+          ...msg,
+          proposedEvents: msg.proposedEvents?.map(e => 
+            e.id === eventId ? { ...e, status: action === 'approve' ? 'approved' : 'rejected' } : e
+          )
+        })));
+      }
+    } catch (error) {
+      console.error('Event action error:', error);
     }
   };
 
@@ -589,20 +627,240 @@ export default function Home() {
                     >
                       <div
                         style={{
-                          maxWidth: '75%',
-                          padding: '10px 16px',
+                          maxWidth: message.proposedEvents ? '92%' : '75%',
+                          padding: message.proposedEvents ? '0' : '10px 16px',
                           borderRadius: 20,
                           fontSize: 14,
                           lineHeight: 1.5,
                           background: message.role === 'user'
                             ? 'linear-gradient(135deg, #3B1D86 0%, #2A005C 100%)'
-                            : 'white',
+                            : message.proposedEvents ? 'transparent' : 'white',
                           color: message.role === 'user' ? 'white' : '#1a0044',
-                          boxShadow: '0 2px 8px rgba(0,0,0,0.04)',
-                          border: message.role === 'assistant' ? '1px solid rgba(59, 29, 134, 0.12)' : 'none',
+                          boxShadow: message.proposedEvents ? 'none' : '0 2px 8px rgba(0,0,0,0.04)',
+                          border: message.role === 'assistant' && !message.proposedEvents ? '1px solid rgba(59, 29, 134, 0.12)' : 'none',
                         }}
                       >
-                        {message.content}
+                        {message.proposedEvents ? (
+                          <div style={{
+                            background: 'white',
+                            borderRadius: 20,
+                            padding: '16px',
+                            border: '1px solid rgba(59, 29, 134, 0.15)',
+                            boxShadow: '0 4px 20px rgba(0,0,0,0.06)',
+                          }}>
+                            <p style={{ margin: '0 0 14px 0', fontSize: 14, color: '#1a0044', lineHeight: 1.5, fontWeight: 500 }}>
+                              {message.content}
+                            </p>
+                            {message.proposedEvents.map((event) => {
+                              const start = new Date(event.start_time);
+                              const end = new Date(event.end_time);
+                              const isAllDay = start.getHours() === 0 && end.getHours() === 0;
+                              const startHour = start.getHours();
+                              const endHour = end.getHours();
+                              
+                              // Build the timeline hours (6am to 10pm window around the event)
+                              const displayStart = Math.max(0, startHour - 3);
+                              const displayEnd = Math.min(23, endHour + 3);
+                              const totalHours = displayEnd - displayStart + 1;
+                              
+                              return (
+                                <div
+                                  key={event.id}
+                                  style={{
+                                    borderRadius: 16,
+                                    overflow: 'hidden',
+                                    border: '1px solid rgba(59, 29, 134, 0.10)',
+                                  }}
+                                >
+                                  {/* Event header */}
+                                  <div style={{
+                                    display: 'flex',
+                                    justifyContent: 'space-between',
+                                    alignItems: 'center',
+                                    padding: '10px 14px',
+                                    background: event.status === 'pending' 
+                                      ? 'linear-gradient(135deg, #3B1D86 0%, #2A005C 100%)' 
+                                      : event.status === 'approved' 
+                                      ? '#E8F5E9' 
+                                      : '#FFEBEE',
+                                    color: event.status === 'pending' ? 'white' : '#1a0044',
+                                  }}>
+                                    <div>
+                                      <div style={{ fontWeight: 700, fontSize: 13 }}>
+                                        {event.title}
+                                      </div>
+                                      <div style={{ fontSize: 11, opacity: 0.85, marginTop: 2 }}>
+                                        {start.toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' })}
+                                        {isAllDay ? ' · All day' : 
+                                          ` · ${start.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })} - ${end.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}`
+                                        }
+                                        {event.recurrence_rule && ' · 🔁 Weekly'}
+                                      </div>
+                                    </div>
+
+                                    {event.status === 'pending' && (
+                                      <div style={{ display: 'flex', gap: 6 }}>
+                                        <button
+                                          onClick={() => {
+                                            console.log('Add button clicked!', event.id);
+                                            handleEventAction(event.id, 'approve');
+                                          }}
+                                          style={{
+                                            background: 'white',
+                                            color: '#3B1D86',
+                                            border: 'none',
+                                            borderRadius: 16,
+                                            padding: '5px 12px',
+                                            fontSize: 11,
+                                            fontWeight: 700,
+                                            cursor: 'pointer',
+                                          }}
+                                        >
+                                          ✓ Add
+                                        </button>
+                                        <button
+                                          onClick={() => {
+                                            console.log('Reject button clicked!', event.id);
+                                            handleEventAction(event.id, 'reject');
+                                          }}
+                                          style={{
+                                            background: 'rgba(255,255,255,0.2)',
+                                            color: 'white',
+                                            border: '1px solid rgba(255,255,255,0.3)',
+                                            borderRadius: 16,
+                                            padding: '5px 12px',
+                                            fontSize: 11,
+                                            fontWeight: 600,
+                                            cursor: 'pointer',
+                                          }}
+                                        >
+                                          ✕
+                                        </button>
+                                      </div>
+                                    )}
+
+                                    {event.status === 'approved' && (
+                                      <span style={{ fontSize: 11, fontWeight: 600 }}>✓ Added</span>
+                                    )}
+                                    {event.status === 'rejected' && (
+                                      <span style={{ fontSize: 11, fontWeight: 600 }}>✕ Declined</span>
+                                    )}
+                                  </div>
+
+                                  {/* Mini timeline - styled like the main calendar day view */}
+                                  {!isAllDay && (
+                                    <div style={{
+                                      height: 200,
+                                      overflowY: 'auto',
+                                      position: 'relative',
+                                      background: '#FAFAFF',
+                                      borderTop: '1px solid rgba(59, 29, 134, 0.08)',
+                                    }}>
+                                      <div style={{
+                                        position: 'relative',
+                                        minHeight: '1440px',
+                                      }}>
+                                        {/* Hour grid */}
+                                        {Array.from({ length: 24 }, (_, hour) => {
+                                          const displayHour = hour === 0 ? 12 : hour > 12 ? hour - 12 : hour;
+                                          const ampm = hour >= 12 ? 'PM' : 'AM';
+                                          const isEventHour = hour >= startHour - 1 && hour <= endHour + 1;
+
+                                          return (
+                                            <div
+                                              key={`hour-${hour}`}
+                                              style={{
+                                                position: 'absolute',
+                                                top: hour * 60,
+                                                left: 0,
+                                                right: 0,
+                                                height: 60,
+                                                borderBottom: '1px solid #F0F0F4',
+                                                display: 'flex',
+                                                alignItems: 'flex-start',
+                                                background: isEventHour ? 'rgba(59, 29, 134, 0.03)' : 'transparent',
+                                              }}
+                                            >
+                                              <span style={{
+                                                fontSize: 10,
+                                                fontWeight: 600,
+                                                color: '#8B8B9A',
+                                                minWidth: 42,
+                                                paddingTop: 2,
+                                                paddingLeft: 4,
+                                              }}>
+                                                {displayHour}:00
+                                              </span>
+                                              <span style={{ fontSize: 9, color: '#B0B0C0', paddingTop: 2 }}>
+                                                {ampm}
+                                              </span>
+                                              <div style={{ flex: 1, position: 'relative', height: '100%' }}>
+                                                {[15, 30, 45].map((minute) => (
+                                                  <div
+                                                    key={`min-${hour}-${minute}`}
+                                                    style={{
+                                                      position: 'absolute',
+                                                      top: `${(minute / 60) * 100}%`,
+                                                      left: 0,
+                                                      right: 0,
+                                                      borderTop: '1px dashed #F0F0F4',
+                                                      height: 0,
+                                                    }}
+                                                  />
+                                                ))}
+                                              </div>
+                                            </div>
+                                          );
+                                        })}
+
+                                        {/* Proposed event block (glowing) */}
+                                        {!isNaN(start.getTime()) && !isNaN(end.getTime()) && (
+                                          <div style={{
+                                            position: 'absolute',
+                                            top: startHour * 60 + start.getMinutes(),
+                                            left: 54,
+                                            right: 8,
+                                            height: Math.max(
+                                              (endHour - startHour) * 60 + (end.getMinutes() - start.getMinutes()),
+                                              25
+                                            ),
+                                            background: 'linear-gradient(135deg, #3B1D86 0%, #5B3DAC 100%)',
+                                            borderRadius: 10,
+                                            zIndex: 10,
+                                            boxShadow: '0 0 20px rgba(59, 29, 134, 0.6), 0 0 6px rgba(59, 29, 134, 0.4), inset 0 1px 0 rgba(255,255,255,0.2)',
+                                            border: '2px solid rgba(255,255,255,0.5)',
+                                            padding: '6px 10px',
+                                            overflow: 'hidden',
+                                          }}>
+                                            <div style={{
+                                              fontSize: 11,
+                                              fontWeight: 700,
+                                              color: 'white',
+                                              textShadow: '0 1px 2px rgba(0,0,0,0.3)',
+                                            }}>
+                                              {event.title}
+                                            </div>
+                                            <div style={{
+                                              fontSize: 9,
+                                              color: 'rgba(255,255,255,0.85)',
+                                              marginTop: 2,
+                                            }}>
+                                              {start.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })} 
+                                              {' - '}
+                                              {end.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}
+                                            </div>
+                                          </div>
+                                        )}
+                                      </div>
+                                    </div>
+                                  )}
+                                </div>
+                              );
+                            })}
+                          </div>
+                        ) : (
+                          message.content
+                        )}
                       </div>
                     </div>
                   ))}
