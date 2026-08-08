@@ -449,6 +449,16 @@ function CalendarView() {
 
 export default function Home() {
   const [activeTab, setActiveTab] = useState<'chat' | 'calendar'>('chat');
+  const { events: calendarEvents } = useCalendarEvents();
+  
+  const getExistingEventsForDate = (dateStr: string) => {
+    if (!calendarEvents) return [];
+    return calendarEvents.filter((e: any) => {
+      const eventDate = new Date(e.start_time).toLocaleDateString('en-CA');
+      return eventDate === dateStr;
+    });
+  };
+
   const [messages, setMessages] = useState<Message[]>([
     {
       id: '1',
@@ -818,7 +828,7 @@ export default function Home() {
                                           <div style={{
                                             position: 'absolute',
                                             top: startHour * 60 + start.getMinutes(),
-                                            left: 54,
+                                            left: 60,
                                             right: 8,
                                             height: Math.max(
                                               (endHour - startHour) * 60 + (end.getMinutes() - start.getMinutes()),
@@ -851,6 +861,42 @@ export default function Home() {
                                             </div>
                                           </div>
                                         )}
+
+                                        {/* Existing events on this day (faded) */}
+                                        {getExistingEventsForDate(start.toLocaleDateString('en-CA'))
+                                          .filter((e: any) => e.google_event_id !== event.google_event_id)
+                                          .map((existing: any) => {
+                                            const exStart = new Date(existing.start_time);
+                                            const exEnd = new Date(existing.end_time);
+                                            return (
+                                              <div
+                                                key={`existing-${existing.id}`}
+                                                style={{
+                                                  position: 'absolute',
+                                                  top: exStart.getHours() * 60 + exStart.getMinutes(),
+                                                  left: 60,
+                                                  right: 8,
+                                                  height: Math.max(
+                                                    (exEnd.getHours() - exStart.getHours()) * 60 + (exEnd.getMinutes() - exStart.getMinutes()),
+                                                    20
+                                                  ),
+                                                  background: 'rgba(200, 200, 210, 0.4)',
+                                                  borderRadius: 6,
+                                                  zIndex: 5,
+                                                  border: '1px solid rgba(150, 150, 170, 0.5)',
+                                                  padding: '3px 8px',
+                                                  overflow: 'hidden',
+                                                }}
+                                              >
+                                                <div style={{ fontSize: 9, fontWeight: 600, color: '#6B6B7A' }}>
+                                                  {existing.title}
+                                                </div>
+                                                <div style={{ fontSize: 8, color: '#8B8B9A' }}>
+                                                  {exStart.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}
+                                                </div>
+                                              </div>
+                                            );
+                                          })}
                                       </div>
                                     </div>
                                   )}

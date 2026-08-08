@@ -28,6 +28,87 @@ export async function POST(req: Request) {
     
     let calendarContext = 'USER HAS NOT CONNECTED THEIR CALENDAR. Do not make up events.';
     if (user) {
+      // First, sync calendar from Google to get latest events
+      const { data: { session } } = await supabase.auth.getSession();
+      const accessToken = session?.provider_token;
+      
+      if (accessToken) {
+        try {
+          const now = new Date().toISOString();
+          const later = new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toISOString();
+          const past = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
+          
+          const syncResponse = await fetch(
+            `https://www.googleapis.com/calendar/v3/calendars/primary/events?timeMin=${past}&timeMax=${later}&orderBy=startTime&singleEvents=true&maxResults=250`,
+            { headers: { 'Authorization': `Bearer ${accessToken}` } }
+          );
+          
+          if (syncResponse.ok) {
+            const syncData = await syncResponse.json();
+            const googleEvents = syncData.items || [];
+            
+            // Get existing events
+            const { data: existingEvents } = await supabase
+              .from('calendar_events')
+              .select('google_event_id, updated_at')
+              .eq('user_id', user.id);
+            
+            const existingMap = new Map(existingEvents?.map(e => [e.google_event_id, e.updated_at]) || []);
+            const googleEventIds = new Set(googleEvents.map((e: any) => e.id));
+            const newEvents: any[] = [];
+            const updatedEvents: any[] = [];
+            
+            googleEvents.forEach((event: any) => {
+              const isAllDay = !!event.start?.date && !event.start?.dateTime;
+              const helper = (raw: string) => {
+                if (!raw) return null;
+                const d = new Date(raw);
+                return isNaN(d.getTime()) ? null : `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}T${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}:${String(d.getSeconds()).padStart(2,'0')}`;
+              };
+              
+              const startTime = isAllDay ? event.start.date + 'T00:00:00' : helper(event.start?.dateTime) ?? helper(event.start?.date);
+              const endTime = isAllDay ? event.end.date + 'T00:00:00' : helper(event.end?.dateTime) ?? helper(event.end?.date);
+              
+              if (!startTime || !endTime) return;
+              
+              const eventData = {
+                user_id: user.id,
+                google_event_id: event.id,
+                title: event.summary || 'Untitled Event',
+                description: event.description || '',
+                start_time: startTime,
+                end_time: endTime,
+                is_confirmed: event.status === 'confirmed',
+                updated_at: event.updated,
+                created_at: new Date().toISOString(),
+              };
+              
+              if (!existingMap.has(event.id)) {
+                newEvents.push(eventData);
+              } else if (existingMap.get(event.id) !== event.updated) {
+                updatedEvents.push(eventData);
+              }
+            });
+            
+            if (newEvents.length > 0) await supabase.from('calendar_events').insert(newEvents);
+            for (const e of updatedEvents) {
+              await supabase.from('calendar_events').update({
+                title: e.title, start_time: e.start_time, end_time: e.end_time,
+                updated_at: e.updated_at, is_confirmed: e.is_confirmed,
+              }).eq('google_event_id', e.google_event_id).eq('user_id', user.id);
+            }
+            
+            // Delete stale
+            const staleIds = existingEvents?.filter(e => !googleEventIds.has(e.google_event_id)).map(e => e.google_event_id) || [];
+            if (staleIds.length > 0) {
+              await supabase.from('calendar_events').delete().eq('user_id', user.id).in('google_event_id', staleIds);
+            }
+          }
+        } catch (e) {
+          console.error('Chat sync error:', e);
+        }
+      }
+      
       const { data: events } = await supabase
         .from('calendar_events')
         .select('title, start_time, end_time')
