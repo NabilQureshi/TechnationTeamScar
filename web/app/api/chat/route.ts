@@ -260,7 +260,7 @@ export async function POST(req: Request) {
             };
           }).filter(Boolean);
           
-          const validEvents = pendingEvents.filter((e: any) => e !== null);
+          const validEvents = pendingEvents.filter((e: any): e is NonNullable<typeof e> => e !== null);
           if (validEvents.length > 0) {
             const { data: inserted, error: insertErr } = await supabase
               .from('pending_events')
