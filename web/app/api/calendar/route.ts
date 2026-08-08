@@ -162,7 +162,7 @@ export async function GET(request: Request) {
         .delete()
         .eq('user_id', user.id)
         .in('google_event_id', staleIds);
-      if (error) console.error('Error deleting stale events:', deleteError);
+      if (deleteError) console.error('Error deleting stale events:', deleteError);
     }
 
     console.log(`Sync complete — New: ${newEvents.length}, Updated: ${updatedEvents.length}, Deleted: ${staleIds.length}`);
