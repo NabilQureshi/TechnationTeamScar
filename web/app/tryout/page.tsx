@@ -864,7 +864,7 @@ export default function Home() {
 
                                         {/* Existing events on this day (faded) */}
                                         {getExistingEventsForDate(start.toLocaleDateString('en-CA'))
-                                          .filter((e: any) => e.google_event_id !== event.google_event_id)
+                                          .filter((e: any) => e.start_time !== event.start_time || e.title !== event.title)
                                           .map((existing: any) => {
                                             const exStart = new Date(existing.start_time);
                                             const exEnd = new Date(existing.end_time);
